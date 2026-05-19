@@ -76,7 +76,7 @@ func ZenityFile(title string) (res string, err error) {
 	}
 	res, err = zenity.SelectFile(zenity.Title(title), zenity.FileFilters(zenityFilters()))
 	if res == "" {
-		err = errors.New("canceled")
+		err = errors.New("selection cancelled")
 	}
 	return res, err
 }
@@ -87,7 +87,7 @@ func ZenityMultiFiles(title string) (res []string, err error) {
 	}
 	res, err = zenity.SelectFileMultiple(zenity.Title(title), zenity.FileFilters(zenityFilters()))
 	if len(res) == 0 {
-		err = errors.New("canceled")
+		err = errors.New("selection cancelled")
 	}
 	return res, err
 }
@@ -98,7 +98,7 @@ func ZenityFolder(title string) (res string, err error) {
 	}
 	res, err = zenity.SelectFile(zenity.Title(title), zenity.Directory())
 	if res == "" {
-		err = errors.New("canceled")
+		err = errors.New("selection cancelled")
 	}
 	return res, err
 }
