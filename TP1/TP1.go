@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -16,6 +17,10 @@ import (
 	"github.com/k-atusa/USAG-Lib/Bencrypt"
 	"github.com/k-atusa/USAG-Lib/Opsec"
 )
+
+var SCLEAR_BACK = func(b []byte) { clear(b) }
+
+func sclear(data []byte) { SCLEAR_BACK(data); runtime.KeepAlive(data) }
 
 const (
 	// Operation Mode
@@ -237,14 +242,14 @@ func (p *TP1) handshakeSend() ([]byte, []byte, []byte, error) {
 	}
 
 	shs, err := p.mask.XOR(p.SharedS) // restore shared secret
-	defer Bencrypt.Sclear(shs)
+	defer sclear(shs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	hashSrc := make([]byte, 0, len(myPub)+len(shs)) // myPub + SharedS
 	hashSrc = append(hashSrc, myPub...)
 	hashSrc = append(hashSrc, shs...)
-	defer Bencrypt.Sclear(hashSrc)
+	defer sclear(hashSrc)
 	hash, _, err := hm.KDF(hashSrc, nonce)
 	if err != nil {
 		return nil, nil, nil, err
@@ -292,7 +297,7 @@ func (p *TP1) handshakeSend() ([]byte, []byte, []byte, error) {
 	verifySrc := make([]byte, 0, len(peerPub)+len(shs)) // peerPub + SharedS
 	verifySrc = append(verifySrc, peerPub...)
 	verifySrc = append(verifySrc, shs...)
-	defer Bencrypt.Sclear(verifySrc)
+	defer sclear(verifySrc)
 	verifyHash, _, err := hm.KDF(verifySrc, peerNonce)
 	if err != nil {
 		return nil, nil, nil, err
@@ -365,7 +370,7 @@ func (p *TP1) handshakeReceive() ([]byte, []byte, []byte, error) {
 
 	// 5. Send Receiver Auth: Nonce(8B) + Hash(32B)
 	shs, err := p.mask.XOR(p.SharedS)
-	defer Bencrypt.Sclear(shs)
+	defer sclear(shs)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -373,7 +378,7 @@ func (p *TP1) handshakeReceive() ([]byte, []byte, []byte, error) {
 	hashSrc := make([]byte, 0, len(myPub)+len(shs)) // myPub + SharedS
 	hashSrc = append(hashSrc, myPub...)
 	hashSrc = append(hashSrc, []byte(shs)...)
-	defer Bencrypt.Sclear(hashSrc)
+	defer sclear(hashSrc)
 	myHash, _, err := hm.KDF(hashSrc, myNonce)
 	if err != nil {
 		return nil, nil, nil, err
@@ -413,7 +418,7 @@ func (p *TP1) handshakeReceive() ([]byte, []byte, []byte, error) {
 	verifySrc := make([]byte, 0, len(peerPub)+len(shs)) // peerPub + SharedS
 	verifySrc = append(verifySrc, peerPub...)
 	verifySrc = append(verifySrc, shs...)
-	defer Bencrypt.Sclear(verifySrc)
+	defer sclear(verifySrc)
 	verifyHash, _, err := hm.KDF(verifySrc, peerNonce)
 	if err != nil {
 		return nil, nil, nil, err
@@ -430,7 +435,7 @@ func (p *TP1) Send(src io.Reader, size int64, smsg string) ([]byte, []byte, erro
 	p.setStage(STAGE_HANDSHAKE)
 	p.conn.SetDeadline(time.Now().Add(30 * time.Second)) // set deadline for handshake
 	peerPub, myPub, myPriv, err := p.handshakeSend()
-	defer Bencrypt.Sclear(myPriv)
+	defer sclear(myPriv)
 	p.conn.SetDeadline(time.Time{}) // clear deadline
 	if err != nil {
 		p.setStage(STAGE_ERROR)
@@ -442,7 +447,7 @@ func (p *TP1) Send(src io.Reader, size int64, smsg string) ([]byte, []byte, erro
 
 	// 2. Prepare encryption worker
 	sm := new(Bencrypt.SymMaster)
-	defer func() { Bencrypt.Sclear(sm.Key) }()
+	defer func() { sclear(sm.Key) }()
 	switch p.Mode & 0xF00 {
 	case SYM_GCM1:
 		err = sm.Init("gcm1", make([]byte, 44))
@@ -459,7 +464,7 @@ func (p *TP1) Send(src io.Reader, size int64, smsg string) ([]byte, []byte, erro
 
 	// 3. Prepare Opsec Header, set Body Key
 	ops := new(Opsec.Opsec)
-	defer func() { Bencrypt.Sclear(ops.BodyKey) }()
+	defer func() { sclear(ops.BodyKey) }()
 	ops.Reset()
 	ops.Smsg = smsg
 	ops.SmsgInfo = Opsec.EncodeInt(uint64(time.Now().Unix()), 8) // current time
@@ -611,7 +616,7 @@ func (p *TP1) Receive(dst io.Writer) ([]byte, []byte, string, error) {
 	p.setStage(STAGE_HANDSHAKE)
 	p.conn.SetDeadline(time.Now().Add(30 * time.Second)) // set deadline for handshake
 	peerPub, myPub, myPriv, err := p.handshakeReceive()
-	defer Bencrypt.Sclear(myPriv)
+	defer sclear(myPriv)
 	p.conn.SetDeadline(time.Time{}) // clear deadline
 	if err != nil {
 		p.setStage(STAGE_ERROR)
@@ -707,7 +712,7 @@ func (p *TP1) Receive(dst io.Writer) ([]byte, []byte, string, error) {
 		tempReader = tempFile
 	}
 	ops := new(Opsec.Opsec)
-	defer func() { Bencrypt.Sclear(ops.BodyKey) }()
+	defer func() { sclear(ops.BodyKey) }()
 	headBytes, err := ops.Read(tempReader, 0)
 	if err != nil {
 		p.setStage(STAGE_ERROR)
@@ -726,7 +731,7 @@ func (p *TP1) Receive(dst io.Writer) ([]byte, []byte, string, error) {
 	// 6. Prepare decryption worker
 	p.setStage(STAGE_ENCRYPTING)
 	sm := new(Bencrypt.SymMaster)
-	defer func() { Bencrypt.Sclear(sm.Key) }()
+	defer func() { sclear(sm.Key) }()
 	if err := sm.Init(ops.BodyAlgo, ops.BodyKey); err != nil {
 		p.setStage(STAGE_ERROR)
 		return peerPub, myPub, "", err

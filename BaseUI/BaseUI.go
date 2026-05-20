@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -22,6 +23,10 @@ import (
 	"github.com/ncruces/zenity"
 	"github.com/taewook427/USAG-KOX/TP1"
 )
+
+var SCLEAR_BACK = func(b []byte) { clear(b) }
+
+func sclear(data []byte) { SCLEAR_BACK(data); runtime.KeepAlive(data) }
 
 // ===== theme =====
 var FyneSize float32 = 1.0
@@ -129,7 +134,7 @@ func SelectKF(lbl *widget.Label, keyPtr *[]byte, mask *Bencrypt.Masker) {
 	crcv := Opsec.Crc32(data)
 	if mask != nil {
 		temp, _ := mask.XOR(data)
-		Bencrypt.Sclear(data)
+		sclear(data)
 		data = temp
 	}
 	*keyPtr = data
@@ -179,9 +184,9 @@ func ReceiveKF(w fyne.Window, lbl *widget.Label, portEnt *widget.Entry, keyPtr *
 
 		// 2-2. Accept Connection
 		tp := new(TP1.TP1)
-		defer func() { Bencrypt.Sclear(tp.SharedS) }()
+		defer func() { sclear(tp.SharedS) }()
 		tp.Init(0, true, true, secret, sock.Conn) // receiver does not need to set mode
-		Bencrypt.Sclear(secret)
+		sclear(secret)
 		buf := new(bytes.Buffer)
 		fromPub, toPub, _, err := tp.Receive(buf)
 		data := buf.Bytes()
@@ -194,7 +199,7 @@ func ReceiveKF(w fyne.Window, lbl *widget.Label, portEnt *widget.Entry, keyPtr *
 		crcv := Opsec.Crc32(data)
 		if mask != nil {
 			temp, _ := mask.XOR(data)
-			Bencrypt.Sclear(data)
+			sclear(data)
 			data = temp
 		}
 		fyne.Do(func() {
@@ -213,7 +218,7 @@ func ChooseKF(lbl *widget.Label, keyPtr *[]byte, sel string, mp map[string][]byt
 	if mask != nil {
 		temp, _ := mask.XOR(data)
 		crcv = Opsec.Crc32(temp)
-		Bencrypt.Sclear(temp)
+		sclear(temp)
 	}
 	*keyPtr = data // if mask is enabled, map data is already masked
 	lbl.SetText(fmt.Sprintf("[%dB, %s] %s", len(data), crcv, sel))
@@ -247,7 +252,7 @@ func SelectPub(lbl *widget.Label, keyPtr *[]byte, basic []byte, mask *Bencrypt.M
 			name = filepath.Base(path)
 			if mask != nil {
 				temp, _ := mask.XOR(data)
-				Bencrypt.Sclear(data)
+				sclear(data)
 				data = temp
 			}
 		}
@@ -262,7 +267,7 @@ func SelectPub(lbl *widget.Label, keyPtr *[]byte, basic []byte, mask *Bencrypt.M
 	if mask != nil {
 		temp, _ := mask.XOR(data)
 		crcv = Opsec.Crc32(temp)
-		Bencrypt.Sclear(temp)
+		sclear(temp)
 	}
 	*keyPtr = data
 	lbl.SetText(fmt.Sprintf("[%dB, %s] %s", len(data), crcv, name))
@@ -311,9 +316,9 @@ func ReceivePub(w fyne.Window, lbl *widget.Label, portEnt *widget.Entry, keyPtr 
 
 		// 2-2. Accept Connection
 		tp := new(TP1.TP1)
-		defer func() { Bencrypt.Sclear(tp.SharedS) }()
+		defer func() { sclear(tp.SharedS) }()
 		tp.Init(0, true, true, secret, sock.Conn) // receiver does not need to set mode
-		Bencrypt.Sclear(secret)
+		sclear(secret)
 		buf := new(bytes.Buffer)
 		fromPub, toPub, _, err := tp.Receive(buf)
 		data := buf.Bytes()
@@ -337,7 +342,7 @@ func ReceivePub(w fyne.Window, lbl *widget.Label, portEnt *widget.Entry, keyPtr 
 		crcv := Opsec.Crc32(data)
 		if mask != nil {
 			temp, _ := mask.XOR(data)
-			Bencrypt.Sclear(data)
+			sclear(data)
 			data = temp
 		}
 		fyne.Do(func() {

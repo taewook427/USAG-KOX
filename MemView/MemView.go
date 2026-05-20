@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -23,8 +24,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-//go:noinline
-func sclear(data []byte) { clear(data) }
+var SCLEAR_BACK = func(b []byte) { clear(b) }
+
+func sclear(data []byte) { SCLEAR_BACK(data); runtime.KeepAlive(data) }
 
 type MemView struct {
 	Context string // for caller
