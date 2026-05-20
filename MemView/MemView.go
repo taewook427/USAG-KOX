@@ -23,6 +23,9 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
+//go:noinline
+func sclear(data []byte) { clear(data) }
+
 type MemView struct {
 	Context string // for caller
 	Window  fyne.Window
@@ -90,7 +93,7 @@ func (v *MemView) Fill() {
 			return
 		}
 		data := []byte(v.entry.Text)
-		clear(v.Data[v.Names[v.CurIdx]])
+		sclear(v.Data[v.Names[v.CurIdx]])
 		v.Data[v.Names[v.CurIdx]] = data
 		v.OnSave(v.Names[v.CurIdx], data)
 	})
@@ -101,7 +104,7 @@ func (v *MemView) Fill() {
 		if v.secure {
 			clear(v.Names)
 			for _, d := range v.Data {
-				clear(d)
+				sclear(d)
 			}
 			clear(v.Data)
 			v.list, v.content, v.entry = nil, nil, nil
