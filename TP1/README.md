@@ -73,4 +73,4 @@ struct TCPsocket {
 #### Standards
 
 - data transfer: port 8001, gcm1
-- file transfer: port 8002, gcmx1, zip1s
+- file transfer: port 8002, gcmx1, zip1
