@@ -56,6 +56,62 @@ struct TCPsocket {
 }
 ```
 
+#### Java
+
+```java
+int MODE_MSGONLY
+
+int HASH_SHA3
+int HASH_PBK2
+int HASH_ARG2
+
+int SYM_GCM1
+int SYM_GCMX1
+
+int ASYM_RSA1
+int ASYM_RSA2
+int ASYM_ECC1
+int ASYM_PQC1
+
+int STAGE_IDLE
+int STAGE_HANDSHAKE
+int STAGE_ENCRYPTING
+int STAGE_TRANSFERRING
+int STAGE_COMPLETE
+int STAGE_ERROR
+
+List<String> GetIPs(boolean v4only)
+String CleanPath(String path)
+
+class TP1Result {
+    byte[] FromPub;
+    byte[] ToPub;
+    String Smsg;
+    Exception Err;
+}
+
+class TP1 {
+    int Mode;
+    boolean InMem;
+    boolean DoPad;
+    byte[] SharedS;
+
+    TP1(int mode, boolean inMem, boolean doPad, byte[] secret, Socket conn)
+    long[] GetStatus()
+    TP1Result Send(InputStream src, long size, String smsg, File tempFile)
+    TP1Result Receive(OutputStream dst, File tempFile)
+}
+
+class TCPsocket {
+    ServerSocket Listener;
+    Socket Conn;
+
+    void MakeListener(int port)
+    void MakeConnection(String addr, int port)
+    void Close()
+}
+```
+
 #### Protocol
 
 - 수신자가 포트를 엽니다. The receiver opens a port.

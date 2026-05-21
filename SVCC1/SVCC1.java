@@ -1,4 +1,4 @@
-// testXXXa : USAG-KOX SCVV1
+// test815a : USAG-KOX SCVV1
 package com.example.main;
 
 import android.os.Parcelable;
