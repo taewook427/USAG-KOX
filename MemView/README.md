@@ -13,6 +13,6 @@ struct MemView {
 	CurIdx  int
 	OnSave  func(string, []byte)
 
-    func Main(app fyne.App, title string, data map[string][]byte, onSave func(string, []byte), secure bool, txtlimit int)
+    func Main(app fyne.App, title string, data map[string][]byte, onSave func(string, []byte), svTxtOnly bool, secure bool, txtlimit int)
 }
 ```

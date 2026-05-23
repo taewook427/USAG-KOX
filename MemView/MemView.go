@@ -38,8 +38,9 @@ type MemView struct {
 	CurIdx  int
 	OnSave  func(string, []byte) // save callback
 
-	secure   bool
-	txtlimit int
+	svTxtOnly bool
+	secure    bool
+	txtlimit  int
 
 	list    *widget.List
 	content *fyne.Container
@@ -47,7 +48,7 @@ type MemView struct {
 	entry   *widget.Entry
 }
 
-func (v *MemView) Main(app fyne.App, title string, data map[string][]byte, onSave func(string, []byte), secure bool, txtlimit int) {
+func (v *MemView) Main(app fyne.App, title string, data map[string][]byte, onSave func(string, []byte), svTxtOnly bool, secure bool, txtlimit int) {
 	v.Data = data
 	v.OnSave = onSave
 	v.Names = make([]string, 0, len(data))
@@ -56,6 +57,7 @@ func (v *MemView) Main(app fyne.App, title string, data map[string][]byte, onSav
 	}
 	sort.Strings(v.Names)
 
+	v.svTxtOnly = svTxtOnly
 	v.secure = secure
 	if txtlimit <= 0 {
 		v.txtlimit = 512 * 1024
@@ -91,13 +93,17 @@ func (v *MemView) Fill() {
 	})
 
 	btnSave := widget.NewButtonWithIcon("Save", theme.DocumentSaveIcon(), func() {
-		if v.CurIdx < 0 || v.CurMode != 1 || v.OnSave == nil {
+		if v.CurIdx < 0 || v.OnSave == nil {
 			return
 		}
-		data := []byte(v.entry.Text)
-		sclear(v.Data[v.Names[v.CurIdx]])
-		v.Data[v.Names[v.CurIdx]] = data
-		v.OnSave(v.Names[v.CurIdx], data)
+		if v.CurMode == 1 && v.entry != nil { // update data from text entry
+			data := []byte(v.entry.Text)
+			sclear(v.Data[v.Names[v.CurIdx]])
+			v.Data[v.Names[v.CurIdx]] = data
+			v.OnSave(v.Names[v.CurIdx], data)
+		} else if !v.svTxtOnly { // call save callback without changes
+			v.OnSave(v.Names[v.CurIdx], v.Data[v.Names[v.CurIdx]])
+		}
 	})
 	btnSave.Importance = widget.HighImportance
 
@@ -154,6 +160,7 @@ func (v *MemView) refreshView(idx int, mode int) {
 	// load data
 	data := v.Data[curName]
 	if data == nil {
+		v.entry = nil
 		v.content.Objects = []fyne.CanvasObject{widget.NewLabelWithStyle("(No Data)", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})}
 		v.content.Refresh()
 		return
@@ -169,6 +176,7 @@ func (v *MemView) refreshView(idx int, mode int) {
 
 	case 1, 2: // text, binary
 		if len(data) > v.txtlimit {
+			v.entry = nil
 			v.content.Objects = []fyne.CanvasObject{widget.NewLabelWithStyle("(Text size exceeds the limit)", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})}
 		} else {
 			v.entry = widget.NewMultiLineEntry()
@@ -184,6 +192,7 @@ func (v *MemView) refreshView(idx int, mode int) {
 		v.content.Refresh()
 
 	default:
+		v.entry = nil
 		v.content.Objects = []fyne.CanvasObject{widget.NewLabelWithStyle("(Unknown Mode)", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})}
 		v.content.Refresh()
 	}
