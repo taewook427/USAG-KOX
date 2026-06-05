@@ -1,10 +1,11 @@
-# USAG-KOX v1.0.3
+# USAG-KOX v1.1.0
 
 Universal Security Assistant Gear - Ko Extension
 
 > Small extension modules used for project USAG
 
 - TP1
+- FalseCrypt
 - BaseUI
 - MemView
 - IO1
