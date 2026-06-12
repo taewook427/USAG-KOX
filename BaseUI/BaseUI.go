@@ -56,12 +56,12 @@ func (m U1Theme) Size(n fyne.ThemeSizeName) float32       { return theme.Default
 // ===== zenity selection =====
 var ZenNames []string = []string{"All", "Document", "Image", "Video", "Audio", "Archive"}
 var ZenTypes [][]string = [][]string{
-	[]string{"*"},
-	[]string{"*.txt", "*.md", "*.pdf", "*.csv"},
-	[]string{"*.jpg", "*.png", "*.jpeg", "*.webp", "*.svg", "*.gif", "*.bmp"},
-	[]string{"*.mp4", "*.mkv", "*.mov", "*.webm", "*.avi"},
-	[]string{"*.mp3", "*.wav", "*.flac", "*.ogg", "*.m4a"},
-	[]string{"*.zip", "*.7z", "*.rar", "*.tar", "*.xz", "*.gz", "*.bz2"},
+	{"*"},
+	{"*.txt", "*.md", "*.pdf", "*.csv"},
+	{"*.jpg", "*.png", "*.jpeg", "*.webp", "*.svg", "*.gif", "*.bmp"},
+	{"*.mp4", "*.mkv", "*.mov", "*.webm", "*.avi"},
+	{"*.mp3", "*.wav", "*.flac", "*.ogg", "*.m4a"},
+	{"*.zip", "*.7z", "*.rar", "*.tar", "*.xz", "*.gz", "*.bz2"},
 }
 
 func zenityFilters() []zenity.FileFilter {
@@ -169,7 +169,7 @@ func ReceiveKF(w fyne.Window, lbl *widget.Label, portEnt *widget.Entry, keyPtr *
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				os.WriteFile("panic-log.txt", []byte(fmt.Sprintf("panic while GUIext.ReceiveKF: %v", r)), 0644)
+				os.WriteFile("panic-log.txt", []byte(fmt.Sprintf("panic while BaseUI.ReceiveKF: %v", r)), 0644)
 			}
 		}()
 
@@ -297,11 +297,11 @@ func ReceivePub(w fyne.Window, lbl *widget.Label, portEnt *widget.Entry, keyPtr 
 	}
 	dialog.ShowInformation("IP Address", strings.Join(ips, "\n"), w)
 
-	// 2. Receive KeyFile
+	// 2. Receive Pubkey
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				os.WriteFile("panic-log.txt", []byte(fmt.Sprintf("panic while GUIext.ReceivePub: %v", r)), 0644)
+				os.WriteFile("panic-log.txt", []byte(fmt.Sprintf("panic while BaseUI.ReceivePub: %v", r)), 0644)
 			}
 		}()
 
@@ -327,7 +327,7 @@ func ReceivePub(w fyne.Window, lbl *widget.Label, portEnt *widget.Entry, keyPtr 
 			return
 		}
 
-		// 3. Decode key
+		// 3. Decode pubkey
 		if strings.Contains(string(data), "#") {
 			data, err = Bencode.Decode64(string(data), "#") // "#" splitter
 		} else {

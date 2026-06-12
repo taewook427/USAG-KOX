@@ -273,6 +273,11 @@ type ChunkBalancer struct {
 	MainPath string
 	Units    []ChunkUnit
 	lock     sync.RWMutex
+
+	logLock     sync.Mutex
+	logFile     *os.File
+	logLastTime time.Time
+	logClearEn  bool
 }
 
 func (cb *ChunkBalancer) Init(mainPath string, units []ChunkUnit) {
@@ -498,13 +503,42 @@ func (cb *ChunkBalancer) logErr(op string, err error) {
 	if err == nil {
 		return
 	}
-	logPath := filepath.Join(cb.MainPath, "log.txt")
-	f, oErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if oErr != nil {
-		return
+	cb.logLock.Lock()
+	defer cb.logLock.Unlock()
+
+	// open log file if not exists
+	if cb.logFile == nil {
+		logPath := filepath.Join(cb.MainPath, "log.txt")
+		f, oErr := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		if oErr != nil {
+			return
+		}
+		cb.logFile = f
 	}
-	defer f.Close()
-	fmt.Fprintf(f, "[%s] [%s] %v\n", time.Now().Format("2006-01-02 15:04:05"), op, err)
+
+	// write log and start cleaner if not enabled
+	cb.logLastTime = time.Now()
+	fmt.Fprintf(cb.logFile, "[%s] [%s] %v\n", cb.logLastTime.Format("2006-01-02 15:04:05"), op, err)
+	if !cb.logClearEn {
+		cb.logClearEn = true
+		go func() {
+			timeout := 5 * time.Minute
+			for {
+				time.Sleep(timeout) // sleep for a while
+				cb.logLock.Lock()
+				if time.Since(cb.logLastTime) >= timeout { // check last log time
+					if cb.logFile != nil {
+						cb.logFile.Close()
+						cb.logFile = nil
+					}
+					cb.logClearEn = false
+					cb.logLock.Unlock()
+					return
+				}
+				cb.logLock.Unlock()
+			}
+		}()
+	}
 }
 
 func (cb *ChunkBalancer) getUnitsOrd(cid []byte) []int {

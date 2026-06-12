@@ -177,7 +177,7 @@ func (v *MemView) refreshView(idx int, mode int) {
 	case 1, 2: // text, binary
 		if len(data) > v.txtlimit {
 			v.entry = nil
-			v.content.Objects = []fyne.CanvasObject{widget.NewLabelWithStyle("(Text size exceeds the limit)", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})}
+			v.content.Objects = []fyne.CanvasObject{widget.NewLabelWithStyle("(Data size exceeds the limit)", fyne.TextAlignCenter, fyne.TextStyle{Bold: true})}
 		} else {
 			v.entry = widget.NewMultiLineEntry()
 			v.entry.TextStyle = fyne.TextStyle{Monospace: true}

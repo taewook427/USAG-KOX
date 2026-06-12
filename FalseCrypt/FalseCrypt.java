@@ -141,7 +141,7 @@ public class FalseCrypt {
             this.UserBitB = new String(mp.get("ubitb"), StandardCharsets.UTF_8);
 
             this.CIDpad = mp.get("cpad").clone();
-            this.CIDkey = mask.XOR(mp.get("ckey")); // XOR 마스킹 복원 및 반영
+            this.CIDkey = mask.XOR(mp.get("ckey"));
             this.WriteAuth = mp.get("wauth").clone();
         }
 
