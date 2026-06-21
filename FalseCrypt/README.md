@@ -9,8 +9,6 @@ Core functions of personal encrypted virtual file system based on USAG-Lib and c
 ```golang
 func Compress(data []byte) []byte
 func Decompress(data []byte) ([]byte, error)
-func SHA3256(data []byte) []byte
-func HMAC3256(key []byte, data []byte) []byte
 
 FLAG_WORKING uint8
 FLAG_DIR uint8
@@ -100,8 +98,6 @@ struct ChunkBalancer(VirtualIO) {
 ```java
 byte[] Compress(byte[] data)
 byte[] Decompress(byte[] data)
-byte[] SHA3256(byte[] data)
-byte[] HMAC3256(byte[] key, byte[] data)
 
 byte FLAG_WORKING
 byte FLAG_DIR

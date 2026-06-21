@@ -1,12 +1,12 @@
 /*
  * structure:
- * lib/bclib.jar, lib/zstdlib.jar, Icons.java, Bencrypt.java, Opsec.java, Star.java, FalseCrypt.java, test.java
+ *   lib/bclib.jar, lib/zstdlib.jar, Icons.java, Bencrypt.java, Opsec.java, Star.java, FalseCrypt.java, test.java
  * windows:
- * javac -cp ".;lib/*" Icons.java Bencrypt.java Opsec.java Star.java FalseCrypt.java test.java
- * java -cp ".;lib/*" test
+ *   javac -cp ".;lib/*" Icons.java Bencrypt.java Opsec.java Star.java FalseCrypt.java test.java
+ *   java -cp ".;lib/*" test
  * mac/linux:
- * javac -cp ".:lib/*" Icons.java Bencrypt.java Opsec.java Star.java FalseCrypt.java test.java
- * java -cp ".:lib/*" test
+ *   javac -cp ".:lib/*" Icons.java Bencrypt.java Opsec.java Star.java FalseCrypt.java test.java
+ *   java -cp ".:lib/*" test
  */
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -120,16 +120,12 @@ public class test {
             byte[] res = FalseCrypt.Decompress(FalseCrypt.Compress(temp));
             System.out.printf("Zstd: %b\n", Arrays.equals(temp, res));
 
-            // [166 175 112 183 175 63 66 53 45 120 62 139 7 81 94 67] [32 191 9 139 107 223 33 111 37 153 225 55 216 97 118 40]
-            byte[] shaOut = FalseCrypt.SHA3256("0000".getBytes(StandardCharsets.UTF_8));
-            byte[] hmacOut = FalseCrypt.HMAC3256("0000".getBytes(StandardCharsets.UTF_8), "00000000".getBytes(StandardCharsets.UTF_8));
-            System.out.printf("SHA: %s %s\n", Arrays.toString(Arrays.copyOfRange(shaOut, 0, 16)), Arrays.toString(Arrays.copyOfRange(hmacOut, 0, 16)));
-
             // PEVFS Pack
             FalseCrypt.PEVFS pevfs = buildPEVFS();
             ByteArrayOutputStream buf = new ByteArrayOutputStream();
             try {
-                pevfs.Pack("hkey".getBytes(StandardCharsets.UTF_8), "salt".getBytes(StandardCharsets.UTF_8), "msg", buf);
+                pevfs.Pack("hkey".getBytes(StandardCharsets.UTF_8), "salt".getBytes(StandardCharsets.UTF_8), "msg",
+                        buf);
                 System.out.println("PEVFS Pack success");
             } catch (Exception e) {
                 System.out.printf("PEVFS Pack %s\n", e.getMessage());
@@ -139,7 +135,8 @@ public class test {
 
             // Test PEVFS View
             FalseCrypt.PEVFS.ViewResult vr = pevfs.View(new ByteArrayInputStream(packedBytes));
-            System.out.printf("PEVFS View %b %b\n", "msg".equals(vr.Msg), Arrays.equals(vr.Salt, "salt".getBytes(StandardCharsets.UTF_8)));
+            System.out.printf("PEVFS View %b %b\n", "msg".equals(vr.Msg),
+                    Arrays.equals(vr.Salt, "salt".getBytes(StandardCharsets.UTF_8)));
 
             // PEVFS Unpack
             try {
@@ -157,8 +154,10 @@ public class test {
                     "test".equals(pevfs.Account.UserBitA),
                     "test".equals(pevfs.Account.UserBitB),
                     Arrays.equals(pevfs.Account.CIDpad, new byte[] { 1, 2, 3, 4, 5, 6 }),
-                    Arrays.equals(pevfs.Account.CIDkey, "abcdefghabcdefghabcdefghabcdefgh".getBytes(StandardCharsets.UTF_8)),
-                    Arrays.equals(pevfs.Account.WriteAuth, "abcdefghabcdefghabcdefghabcdefgh".getBytes(StandardCharsets.UTF_8)));
+                    Arrays.equals(pevfs.Account.CIDkey,
+                            "abcdefghabcdefghabcdefghabcdefgh".getBytes(StandardCharsets.UTF_8)),
+                    Arrays.equals(pevfs.Account.WriteAuth,
+                            "abcdefghabcdefghabcdefghabcdefgh".getBytes(StandardCharsets.UTF_8)));
 
             // Test PEVFS File count
             int[] counts = new int[2];
@@ -168,7 +167,8 @@ public class test {
             // Test PEVFS Folder node
             FalseCrypt.VMeta fMeta = pevfs.Meta.get(1L);
             boolean fOk = (fMeta != null);
-            System.out.printf("Folder Meta: %b %b %b\n", fOk, fOk && "abcdefghabcdefghabcdefghabcdefgh".equals(fMeta.Name), fOk && fMeta.EdTime == 12345678);
+            System.out.printf("Folder Meta: %b %b %b\n", fOk,
+                    fOk && "abcdefghabcdefghabcdefghabcdefgh".equals(fMeta.Name), fOk && fMeta.EdTime == 12345678);
 
             // Test PEVFS File key
             byte[] expectedKey = "abcdefghabcdefghabcdefghabcdefghabcdefghabcdefgh".getBytes(StandardCharsets.UTF_8);

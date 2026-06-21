@@ -29,7 +29,7 @@ func SendTest(wg *sync.WaitGroup) {
 
 	data := make([]byte, 1048576)
 	tp := new(TP1)
-	tp.Init(HASH_ARG2+SYM_GCM1+ASYM_PQC1, true, true, []byte("secret"), sock.Conn)
+	tp.Init(HASH_ARG2_ST+SYM_GCM1+ASYM_PQC1, true, true, []byte("secret"), sock.Conn)
 	fromPub, toPub, err := tp.Send(bytes.NewReader(data), int64(len(data)), "secret")
 	if err != nil {
 		return

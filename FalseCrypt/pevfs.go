@@ -4,12 +4,9 @@ package FalseCrypt
 import (
 	"bytes"
 	"crypto/aes"
-	"crypto/hmac"
-	"crypto/sha3"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash"
 	"io"
 	"runtime"
 	"strings"
@@ -44,17 +41,6 @@ func Decompress(data []byte) ([]byte, error) {
 	}
 	defer z.Close()
 	return z.DecodeAll(data, nil)
-}
-
-func SHA3256(data []byte) []byte {
-	hash := sha3.Sum256(data)
-	return hash[:]
-}
-
-func HMAC3256(key []byte, data []byte) []byte {
-	h := hmac.New(func() hash.Hash { return sha3.New256() }, key)
-	h.Write(data)
-	return h.Sum(nil)
 }
 
 // Account Data
@@ -256,7 +242,6 @@ func (p *PEVFS) Init(vu VUser, vf VFile, vm map[uint64]VMeta, sl uint8, kl uint8
 
 func (p *PEVFS) View(src io.Reader) (string, []byte, error) {
 	ops := new(Opsec.Opsec)
-	ops.Reset()
 	header, err := ops.Read(src, 0)
 	if err != nil {
 		return "", nil, err
@@ -370,14 +355,14 @@ func (p *PEVFS) Pack(hkey []byte, salt []byte, msg string, dst io.Writer) error 
 
 	// 2. Opsec header
 	ops := new(Opsec.Opsec)
-	defer func() { sclear(ops.BodyKey) }()
-	ops.Reset()
+	ops.Init()
+	defer ops.Clear()
 	ops.Msg = msg
 	ops.MsgInfo = salt
 
 	sm := new(Bencrypt.SymMaster)
 	defer func() { sclear(sm.Key) }()
-	if err := sm.Init("gcmx1", make([]byte, 44)); err != nil {
+	if err := sm.Init("gcmx1", make([]byte, 32)); err != nil {
 		return err
 	}
 
@@ -498,8 +483,8 @@ func (p *PEVFS) packMeta(buf *bytes.Buffer, node VFile) error {
 func (p *PEVFS) Unpack(hkey []byte, src io.Reader) error {
 	// 1. Opsec header read and decrypt
 	ops := new(Opsec.Opsec)
-	defer func() { sclear(ops.BodyKey) }()
-	ops.Reset()
+	ops.Init()
+	defer ops.Clear()
 
 	header, err := ops.Read(src, 0)
 	if err != nil {

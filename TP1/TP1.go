@@ -27,19 +27,17 @@ const (
 	MODE_MSGONLY uint16 = 0x1
 
 	// Hash Function Mode
-	HASH_SHA3 uint16 = 0x10
-	HASH_PBK2 uint16 = 0x20
-	HASH_ARG2 uint16 = 0x30
+	HASH_SHA3     uint16 = 0x10
+	HASH_ARG2_LOW uint16 = 0x20
+	HASH_ARG2_ST  uint16 = 0x30
 
 	// Symmetric Encryption Mode
 	SYM_GCM1  uint16 = 0x100
 	SYM_GCMX1 uint16 = 0x200
 
 	// Asymmetric Encryption Mode
-	ASYM_RSA1 uint16 = 0x1000
-	ASYM_RSA2 uint16 = 0x2000
-	ASYM_ECC1 uint16 = 0x3000
-	ASYM_PQC1 uint16 = 0x4000
+	ASYM_ECC1 uint16 = 0x1000
+	ASYM_PQC1 uint16 = 0x2000
 
 	// Status
 	STAGE_IDLE         int = 0
@@ -198,10 +196,6 @@ func (p *TP1) handshakeSend() ([]byte, []byte, []byte, error) {
 	var err error
 	am := new(Bencrypt.AsymMaster)
 	switch p.Mode & 0xF000 {
-	case ASYM_RSA1:
-		err = am.Init("rsa1")
-	case ASYM_RSA2:
-		err = am.Init("rsa2")
 	case ASYM_ECC1:
 		err = am.Init("ecc1")
 	case ASYM_PQC1:
@@ -229,11 +223,11 @@ func (p *TP1) handshakeSend() ([]byte, []byte, []byte, error) {
 	hm := new(Bencrypt.HashMaster)
 	switch p.Mode & 0xF0 {
 	case HASH_SHA3:
-		err = hm.Init("sha3", 32, 44)
-	case HASH_PBK2:
-		err = hm.Init("pbk2", 32, 44)
-	case HASH_ARG2:
-		err = hm.Init("arg2", 32, 44)
+		err = hm.Init("sha3", 0, 0)
+	case HASH_ARG2_LOW:
+		err = hm.Init("arg2low", 0, 0)
+	case HASH_ARG2_ST:
+		err = hm.Init("arg2st", 0, 0)
 	default:
 		err = errors.New("invalid mode: no valid algorithm flag set")
 	}
@@ -325,10 +319,6 @@ func (p *TP1) handshakeReceive() ([]byte, []byte, []byte, error) {
 	var err error
 	am := new(Bencrypt.AsymMaster)
 	switch p.Mode & 0xF000 {
-	case ASYM_RSA1:
-		err = am.Init("rsa1")
-	case ASYM_RSA2:
-		err = am.Init("rsa2")
 	case ASYM_ECC1:
 		err = am.Init("ecc1")
 	case ASYM_PQC1:
@@ -356,11 +346,11 @@ func (p *TP1) handshakeReceive() ([]byte, []byte, []byte, error) {
 	hm := new(Bencrypt.HashMaster)
 	switch p.Mode & 0xF0 {
 	case HASH_SHA3:
-		err = hm.Init("sha3", 32, 44)
-	case HASH_PBK2:
-		err = hm.Init("pbk2", 32, 44)
-	case HASH_ARG2:
-		err = hm.Init("arg2", 32, 44)
+		err = hm.Init("sha3", 0, 0)
+	case HASH_ARG2_LOW:
+		err = hm.Init("arg2low", 0, 0)
+	case HASH_ARG2_ST:
+		err = hm.Init("arg2st", 0, 0)
 	default:
 		return nil, nil, nil, errors.New("invalid mode: no valid hash algorithm flag set")
 	}
@@ -450,9 +440,9 @@ func (p *TP1) Send(src io.Reader, size int64, smsg string) ([]byte, []byte, erro
 	defer func() { sclear(sm.Key) }()
 	switch p.Mode & 0xF00 {
 	case SYM_GCM1:
-		err = sm.Init("gcm1", make([]byte, 44))
+		err = sm.Init("gcm1", make([]byte, 32))
 	case SYM_GCMX1:
-		err = sm.Init("gcmx1", make([]byte, 44))
+		err = sm.Init("gcmx1", make([]byte, 32))
 	default:
 		err = errors.New("invalid mode: no valid algorithm flag set")
 	}
@@ -464,18 +454,14 @@ func (p *TP1) Send(src io.Reader, size int64, smsg string) ([]byte, []byte, erro
 
 	// 3. Prepare Opsec Header, set Body Key
 	ops := new(Opsec.Opsec)
-	defer func() { sclear(ops.BodyKey) }()
-	ops.Reset()
+	ops.Init()
+	defer ops.Clear()
 	ops.Smsg = smsg
 	ops.SmsgInfo = Opsec.EncodeInt(uint64(time.Now().Unix()), 8) // current time
 	ops.BodyAlgo = sm.Algo
 	ops.BodySize = sm.AfterSize(size)
 	var opsHead []byte
 	switch p.Mode & 0xF000 {
-	case ASYM_RSA1:
-		opsHead, err = ops.Encpub("rsa1", peerPub, myPriv)
-	case ASYM_RSA2:
-		opsHead, err = ops.Encpub("rsa2", peerPub, myPriv)
 	case ASYM_ECC1:
 		opsHead, err = ops.Encpub("ecc1", peerPub, myPriv)
 	case ASYM_PQC1:
@@ -712,7 +698,7 @@ func (p *TP1) Receive(dst io.Writer) ([]byte, []byte, string, error) {
 		tempReader = tempFile
 	}
 	ops := new(Opsec.Opsec)
-	defer func() { sclear(ops.BodyKey) }()
+	defer ops.Clear()
 	headBytes, err := ops.Read(tempReader, 0)
 	if err != nil {
 		p.setStage(STAGE_ERROR)

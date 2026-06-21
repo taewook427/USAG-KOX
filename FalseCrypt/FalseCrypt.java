@@ -61,27 +61,6 @@ public class FalseCrypt {
         }
     }
 
-    public static byte[] SHA3256(byte[] data) {
-        if (data == null)
-            return null;
-        SHA3Digest digest = new SHA3Digest(256);
-        byte[] result = new byte[digest.getDigestSize()];
-        digest.update(data, 0, data.length);
-        digest.doFinal(result, 0);
-        return result;
-    }
-
-    public static byte[] HMAC3256(byte[] key, byte[] data) {
-        if (key == null || data == null)
-            return null;
-        HMac hmac = new HMac(new SHA3Digest(256));
-        hmac.init(new KeyParameter(key));
-        hmac.update(data, 0, data.length);
-        byte[] result = new byte[hmac.getMacSize()];
-        hmac.doFinal(result, 0);
-        return result;
-    }
-
     // File Node Flags
     public static final byte FLAG_WORKING = 7;
     public static final byte FLAG_DIR = 6;
@@ -286,7 +265,6 @@ public class FalseCrypt {
 
         public ViewResult View(InputStream src) throws Exception {
             Opsec ops = new Opsec();
-            ops.Reset();
             byte[] header = ops.Read(src, 0);
             if (header == null || header.length == 0) {
                 throw new IOException("Unexpected end of opsec header stream");
@@ -369,11 +347,11 @@ public class FalseCrypt {
             // write complete data to dst
             try {
                 Opsec ops = new Opsec();
-                ops.Reset();
+                ops.Init();
                 ops.Msg = msg;
                 ops.MsgInfo = salt;
 
-                Bencrypt.SymMaster sm = new Bencrypt.SymMaster("gcmx1", new byte[44]);
+                Bencrypt.SymMaster sm = new Bencrypt.SymMaster("gcmx1", new byte[32]);
                 ops.BodySize = sm.AfterSize(tarData.length);
                 ops.BodyAlgo = "gcmx1";
                 ops.BodyInfo = "tar1".getBytes(StandardCharsets.UTF_8);
@@ -413,8 +391,6 @@ public class FalseCrypt {
         public void Unpack(byte[] hkey, InputStream src) throws Exception {
             // read ad opsec format
             Opsec ops = new Opsec();
-            ops.Reset();
-
             byte[] header = ops.Read(src, 0);
             ops.View(header);
             ops.Decpw(hkey, null);

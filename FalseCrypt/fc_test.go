@@ -81,7 +81,6 @@ func TestMain(m *testing.M) {
 	temp := []byte("qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM")
 	res, err := Decompress(Compress(temp))
 	fmt.Printf("Zstd: %t %v\n", bytes.Equal(temp, res), err)
-	fmt.Printf("SHA: %v %v\n", SHA3256([]byte("0000"))[0:16], HMAC3256([]byte("0000"), []byte("00000000"))[0:16]) // [166 175 112 183 175 63 66 53 45 120 62 139 7 81 94 67] [32 191 9 139 107 223 33 111 37 153 225 55 216 97 118 40]
 
 	// PEVFS Pack Unpack
 	pevfs := buildPEVFS()

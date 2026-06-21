@@ -65,7 +65,7 @@ public class test {
             try {
                 sock.MakeConnection("127.0.0.1", 8080);
                 byte[] data = new byte[1048576];
-                int mode = TP1.HASH_ARG2 + TP1.SYM_GCM1 + TP1.ASYM_PQC1;
+                int mode = TP1.HASH_ARG2_ST + TP1.SYM_GCM1 + TP1.ASYM_PQC1;
                 TP1 tp = new TP1(mode, true, true, "secret".getBytes(), sock.Conn);
                 ByteArrayInputStream src = new ByteArrayInputStream(data);
                 TP1.TP1Result res = tp.Send(src, data.length, "secret", null);
