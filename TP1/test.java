@@ -1,4 +1,3 @@
-
 /*
 * structure:
 *   lib/bclib.jar, Bencrypt.java, Opsec.java, TP1.java, test.java

@@ -39,8 +39,8 @@ github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade h1:FmusiCI1wH
 github.com/jeandeaual/go-locale v0.0.0-20250612000132-0ef82f21eade/go.mod h1:ZDXo8KHryOWSIqnsb/CiDq7hQUYryCgdVnxbj8tDG7o=
 github.com/josephspurrier/goversioninfo v1.4.1 h1:5LvrkP+n0tg91J9yTkoVnt/QgNnrI1t4uSsWjIonrqY=
 github.com/josephspurrier/goversioninfo v1.4.1/go.mod h1:JWzv5rKQr+MmW+LvM412ToT/IkYDZjaclF2pKDss8IY=
-github.com/k-atusa/USAG-Lib v1.6.0 h1:DfHfp5qHaErInEPsfTq/k0VWTLHvHW2GiyEZWP0+Qe8=
-github.com/k-atusa/USAG-Lib v1.6.0/go.mod h1:aorP4yL8I4CMTEpKB2WnwJFAIxjlvQ0x4meDPDk8wkk=
+github.com/k-atusa/USAG-Lib v1.6.5 h1:pC+J/PV2O1CG0DyavXZOUiVE4Okx8YuoXBqQlvDj4EM=
+github.com/k-atusa/USAG-Lib v1.6.5/go.mod h1:aorP4yL8I4CMTEpKB2WnwJFAIxjlvQ0x4meDPDk8wkk=
 github.com/klauspost/compress v1.18.6 h1:2jupLlAwFm95+YDR+NwD2MEfFO9d4z4Prjl1XXDjuao=
 github.com/klauspost/compress v1.18.6/go.mod h1:cwPg85FWrGar70rWktvGQj8/hthj3wpl0PGDogxkrSQ=
 github.com/mattn/go-runewidth v0.0.17 h1:78v8ZlW0bP43XfmAfPsdXcoNCelfMHsDmd/pkENfrjQ=

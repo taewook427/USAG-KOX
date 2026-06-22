@@ -10,14 +10,12 @@ A protocol for end-to-end encrypted transfer of data or ZIP files over a local a
 MODE_MSGONLY uint16
 
 HASH_SHA3 uint16
-HASH_PBK2 uint16
-HASH_ARG2 uint16
+HASH_ARG2_LOW uint16
+HASH_ARG2_ST uint16
 
 SYM_GCM1  uint16
 SYM_GCMX1 uint16
 
-ASYM_RSA1 uint16
-ASYM_RSA2 uint16
 ASYM_ECC1 uint16
 ASYM_PQC1 uint16
 
@@ -62,14 +60,12 @@ struct TCPsocket {
 int MODE_MSGONLY
 
 int HASH_SHA3
-int HASH_PBK2
-int HASH_ARG2
+int HASH_ARG2_LOW
+int HASH_ARG2_ST
 
 int SYM_GCM1
 int SYM_GCMX1
 
-int ASYM_RSA1
-int ASYM_RSA2
 int ASYM_ECC1
 int ASYM_PQC1
 

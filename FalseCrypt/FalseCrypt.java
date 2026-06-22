@@ -1,4 +1,6 @@
 // test817c : FalseCrypt
+package com.example.main;
+
 /*
 * external library zstd-jni is required
 * desktop: lib/zstdlib.jar

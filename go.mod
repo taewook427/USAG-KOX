@@ -4,7 +4,7 @@ go 1.25.5
 
 require (
 	fyne.io/fyne/v2 v2.7.4
-	github.com/k-atusa/USAG-Lib v1.6.0
+	github.com/k-atusa/USAG-Lib v1.6.5
 	github.com/klauspost/compress v1.18.6
 	github.com/ncruces/zenity v0.10.14
 	golang.org/x/image v0.43.0
