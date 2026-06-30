@@ -2,19 +2,16 @@
 package FalseCrypt
 
 import (
-	"encoding/base32"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/crc32"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -111,13 +108,32 @@ type VirtualIO interface {
 	ReadChunk(cid []byte) ([]byte, error)
 	WriteChunk(cid []byte, data []byte) error
 	DelChunk(cid []byte) error
-	CheckChunk(cid []byte, chkHash bool) (bool, error)
+
+	CheckChunk() []byte
 	TrimChunk(bloom []byte) (int, error)
+	TrimEmpty() (int, error)
 }
 
-// Multi-folder chunk IO
-func b32(d []byte) string {
-	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(d))
+// chunk IO metadata
+type ChunkMeta struct {
+	MainPath string    `json:"mainpath"`
+	BfSize   uint64    `json:"bfsize"`
+	Paths    []string  `json:"paths"`
+	Caps     []int64   `json:"caps"`
+	Weights  []float32 `json:"weights"`
+	WriteKey []byte    `json:"wrkey"`
+}
+
+func (cm *ChunkMeta) Init(jsonStr string) error {
+	return json.Unmarshal([]byte(jsonStr), cm)
+}
+
+func (cm *ChunkMeta) Save() (string, error) {
+	data, err := json.MarshalIndent(cm, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
 }
 
 type ChunkUnit struct {
@@ -146,37 +162,29 @@ func (cu *ChunkUnit) Init(path string, cap int64, weight float32) {
 	})
 }
 
-func (u *ChunkUnit) removeChunk(subDir string, filePrefix string) (bool, error) {
-	targetDir := filepath.Join(u.Path, subDir)
-	entries, err := os.ReadDir(targetDir)
+func (u *ChunkUnit) removeChunk(subDir string, fileName string) (bool, error) {
+	filePath := filepath.Join(u.Path, subDir, fileName)
+	info, err := os.Stat(filePath)
 	if err != nil {
-		return false, nil // upper folder not exists
-	}
-
-	for _, entry := range entries {
-		filename := entry.Name()
-		if !entry.IsDir() && strings.HasPrefix(strings.ToLower(filename), filePrefix) {
-			// get file size, remove physical file
-			info, errI := entry.Info()
-			var size int64
-			if errI == nil {
-				size = info.Size()
-			}
-			if err := os.Remove(filepath.Join(targetDir, filename)); err != nil {
-				return false, err
-			}
-
-			// decrement used
-			u.lock.Lock()
-			u.Used -= size
-			if u.Used < 0 {
-				u.Used = 0
-			}
-			u.lock.Unlock()
-			return true, nil // success
+		if os.IsNotExist(err) {
+			return false, nil // not found
 		}
+		return false, err
 	}
-	return false, nil // not found
+
+	size := info.Size()
+	if err := os.Remove(filePath); err != nil {
+		return false, err
+	}
+
+	// decrement used
+	u.lock.Lock()
+	u.Used -= size
+	if u.Used < 0 {
+		u.Used = 0
+	}
+	u.lock.Unlock()
+	return true, nil // success
 }
 
 func (u *ChunkUnit) trimUnit(bf *BloomFilter, logErr func(string, error)) int64 {
@@ -186,39 +194,37 @@ func (u *ChunkUnit) trimUnit(bf *BloomFilter, logErr func(string, error)) int64 
 			return nil
 		}
 
-		filename := e.Name() // standard filename is 30 chars
-		if len(filename) == 30 {
+		filename := e.Name()
+		if len(filename) == 26 {
 			// get CID from filename
 			d3 := filepath.Base(filepath.Dir(path))
 			d2 := filepath.Base(filepath.Dir(filepath.Dir(path)))
 			d1 := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path))))
-			pBytes, errP := hex.DecodeString(d1 + d2 + d3)
-			sBytes, errS := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(filename[:21]))
-
-			// check CID is in Bloom Filter
-			if errP == nil && errS == nil {
-				cid := append(pBytes, sBytes...)
-				if !bf.Test(cid) {
-
-					// get file size
-					info, errI := e.Info()
-					var size int64
-					if errI == nil {
-						size = info.Size()
-					}
-
-					if errDel := os.Remove(path); errDel == nil {
-						deleted++
-
-						// decrement used
-						u.lock.Lock()
-						u.Used -= size
-						if u.Used < 0 {
-							u.Used = 0
+			if len(d1) == 2 && len(d2) == 2 && len(d3) == 2 {
+				hexStr := d1 + d2 + d3 + filename
+				cid, err := hex.DecodeString(hexStr)
+				if err == nil && len(cid) == 16 {
+					if !bf.Test(cid) {
+						// get file size
+						info, errI := e.Info()
+						var size int64
+						if errI == nil {
+							size = info.Size()
 						}
-						u.lock.Unlock()
-					} else {
-						logErr(fmt.Sprintf("TrimChunk %s", path), errDel)
+
+						if errDel := os.Remove(path); errDel == nil {
+							deleted++
+
+							// decrement used
+							u.lock.Lock()
+							u.Used -= size
+							if u.Used < 0 {
+								u.Used = 0
+							}
+							u.lock.Unlock()
+						} else {
+							logErr(fmt.Sprintf("TrimChunk %s", path), errDel)
+						}
 					}
 				}
 			}
@@ -273,6 +279,7 @@ type ChunkBalancer struct {
 	MainPath string
 	Units    []ChunkUnit
 	lock     sync.RWMutex
+	bf       BloomFilter
 
 	logLock     sync.Mutex
 	logFile     *os.File
@@ -280,14 +287,55 @@ type ChunkBalancer struct {
 	logClearEn  bool
 }
 
-func (cb *ChunkBalancer) Init(mainPath string, units []ChunkUnit) {
-	cb.MainPath = mainPath
-	cb.Units = units
-	os.MkdirAll(mainPath, 0755)
+func (cb *ChunkBalancer) Init(meta *ChunkMeta) {
+	cb.MainPath = meta.MainPath
+	cb.Units = make([]ChunkUnit, len(meta.Paths))
+	for i := range meta.Paths {
+		var cp int64 = 0
+		var wt float32 = 1.0
+		if i < len(meta.Caps) {
+			cp = meta.Caps[i]
+		}
+		if i < len(meta.Weights) {
+			wt = meta.Weights[i]
+		}
+		cb.Units[i].Init(meta.Paths[i], cp, wt)
+	}
+	os.MkdirAll(cb.MainPath, 0755)
+
+	// get bloom filter capacity
+	fpRate := 0.001
+	ln2Sq := math.Pow(math.Log(2), 2)
+	cidNum := max(uint64(math.Round(float64(meta.BfSize)*ln2Sq/(-math.Log(fpRate)))), 1)
+	cb.bf.Init(cidNum, fpRate)
+
+	// load all CIDs into bloom filter
+	for i := range cb.Units {
+		unitPath := cb.Units[i].Path
+		filepath.WalkDir(unitPath, func(path string, e os.DirEntry, err error) error {
+			if err != nil || e.IsDir() {
+				return nil
+			}
+			filename := e.Name()
+			if len(filename) == 26 {
+				d3 := filepath.Base(filepath.Dir(path))
+				d2 := filepath.Base(filepath.Dir(filepath.Dir(path)))
+				d1 := filepath.Base(filepath.Dir(filepath.Dir(filepath.Dir(path))))
+				if len(d1) == 2 && len(d2) == 2 && len(d3) == 2 {
+					hexStr := d1 + d2 + d3 + filename
+					cid, err := hex.DecodeString(hexStr)
+					if err == nil && len(cid) == 16 {
+						cb.bf.Add(cid)
+					}
+				}
+			}
+			return nil
+		})
+	}
 }
 
 func (cb *ChunkBalancer) GetAccount(username string, dst io.Writer) error {
-	srcPath := filepath.Join(cb.MainPath, b32([]byte(username))+".webp")
+	srcPath := filepath.Join(cb.MainPath, hex.EncodeToString([]byte(username))+".webp")
 	file, err := os.Open(srcPath)
 	if err != nil {
 		cb.logErr("GetAccount "+username, err)
@@ -302,7 +350,7 @@ func (cb *ChunkBalancer) GetAccount(username string, dst io.Writer) error {
 }
 
 func (cb *ChunkBalancer) SetAccount(username string, src io.Reader, size int64) error {
-	dstPath := filepath.Join(cb.MainPath, b32([]byte(username))+".webp")
+	dstPath := filepath.Join(cb.MainPath, hex.EncodeToString([]byte(username))+".webp")
 	file, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		cb.logErr("SetAccount "+username, err)
@@ -317,30 +365,16 @@ func (cb *ChunkBalancer) SetAccount(username string, src io.Reader, size int64) 
 }
 
 func (cb *ChunkBalancer) ReadChunk(cid []byte) ([]byte, error) {
-	h := hex.EncodeToString(cid[0:3])
+	h := hex.EncodeToString(cid)
 	subDir := filepath.Join(h[0:2], h[2:4], h[4:6])
-	filePrefix := b32(cid[3:]) + "_"
+	fileName := h[6:]
 
 	// search by order
 	for _, idx := range cb.getUnitsOrd(cid) {
-		targetDir := filepath.Join(cb.Units[idx].Path, subDir)
-		entries, err := os.ReadDir(targetDir)
-		if err != nil {
-			continue
-		}
-
-		for _, entry := range entries {
-			filename := entry.Name()
-			if !entry.IsDir() && strings.HasPrefix(strings.ToLower(filename), filePrefix) {
-
-				// read physical file
-				data, err := os.ReadFile(filepath.Join(targetDir, filename))
-				if err != nil {
-					cb.logErr(fmt.Sprintf("ReadChunk %x", cid), err)
-					return nil, err
-				}
-				return data, nil
-			}
+		filePath := filepath.Join(cb.Units[idx].Path, subDir, fileName)
+		data, err := os.ReadFile(filePath)
+		if err == nil {
+			return data, nil
 		}
 	}
 
@@ -355,12 +389,11 @@ func (cb *ChunkBalancer) WriteChunk(cid []byte, data []byte) error {
 	cb.removeChunk(cid)
 
 	ord := cb.getUnitsOrd(cid)
-	checksum := crc32.ChecksumIEEE(data)
 	size := int64(len(data))
 
-	h := hex.EncodeToString(cid[:3])
+	h := hex.EncodeToString(cid)
 	subDir := filepath.Join(h[0:2], h[2:4], h[4:6])
-	newFileName := fmt.Sprintf("%s_%08x", b32(cid[3:]), checksum)
+	newFileName := h[6:]
 
 	// check capacity left by order
 	for _, idx := range ord {
@@ -374,6 +407,7 @@ func (cb *ChunkBalancer) WriteChunk(cid []byte, data []byte) error {
 			if err == nil {
 				cb.Units[idx].Used += size
 				cb.Units[idx].lock.Unlock()
+				cb.bf.Add(cid)
 				return nil
 			} else {
 				cb.logErr(fmt.Sprintf("WriteChunk %x", cid), err)
@@ -394,55 +428,8 @@ func (cb *ChunkBalancer) DelChunk(cid []byte) error {
 	return err
 }
 
-func (cb *ChunkBalancer) CheckChunk(cid []byte, chkHash bool) (bool, error) {
-	h := hex.EncodeToString(cid[0:3])
-	subDir := filepath.Join(h[0:2], h[2:4], h[4:6])
-	filePrefix := b32(cid[3:]) + "_"
-
-	// search by order
-	for _, idx := range cb.getUnitsOrd(cid) {
-		targetDir := filepath.Join(cb.Units[idx].Path, subDir)
-		entries, err := os.ReadDir(targetDir)
-		if err != nil {
-			continue
-		}
-
-		for _, entry := range entries {
-			filename := entry.Name()
-			if !entry.IsDir() && strings.HasPrefix(strings.ToLower(filename), filePrefix) {
-				// check file existence
-				if !chkHash {
-					return true, nil
-				}
-
-				// check CRC32
-				if len(filename) == 30 {
-					// get crc value
-					crcHex := filename[22:30]
-					storedCRC, err := strconv.ParseUint(crcHex, 16, 32)
-					if err != nil {
-						continue
-					}
-
-					// read physical file
-					data, err := os.ReadFile(filepath.Join(targetDir, filename))
-					if err != nil {
-						cb.logErr(fmt.Sprintf("CheckChunk %x", cid), err)
-						return false, err
-					}
-
-					// compare CRC
-					if crc32.ChecksumIEEE(data) != uint32(storedCRC) {
-						errCorrupt := fmt.Errorf("CRC32 mismatch: %s/%s", targetDir, filename)
-						cb.logErr(fmt.Sprintf("CheckChunk %x", cid), errCorrupt)
-						return false, errCorrupt
-					}
-					return true, nil
-				}
-			}
-		}
-	}
-	return false, nil // file not exists
+func (cb *ChunkBalancer) CheckChunk() []byte {
+	return cb.bf.Export()
 }
 
 func (cb *ChunkBalancer) TrimChunk(bloom []byte) (int, error) {
@@ -576,13 +563,13 @@ func (cb *ChunkBalancer) getUnitsOrd(cid []byte) []int {
 }
 
 func (cb *ChunkBalancer) removeChunk(cid []byte) error {
-	h := hex.EncodeToString(cid[0:3])
+	h := hex.EncodeToString(cid)
 	subDir := filepath.Join(h[0:2], h[2:4], h[4:6])
-	filePrefix := b32(cid[3:]) + "_"
+	fileName := h[6:]
 
 	// search by order
 	for _, idx := range cb.getUnitsOrd(cid) {
-		found, err := cb.Units[idx].removeChunk(subDir, filePrefix)
+		found, err := cb.Units[idx].removeChunk(subDir, fileName)
 		if err != nil {
 			return err
 		}

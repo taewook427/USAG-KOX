@@ -79,8 +79,22 @@ interface VirtualIO {
     func ReadChunk(cid []byte) ([]byte, error)
     func WriteChunk(cid []byte, data []byte) error
     func DelChunk(cid []byte) error
-    func CheckChunk(cid []byte, chkHash bool) (bool, error)
+    
+    func CheckChunk() []byte
     func TrimChunk(bloom []byte) (int, error)
+    func TrimEmpty() (int, error)
+}
+
+struct ChunkMeta {
+    MainPath string
+    BfSize   uint64
+    Paths    []string
+    Caps     []int64
+    Weights  []float32
+    WriteKey []byte
+
+    func Init(json string) error
+    func Save() (string, error)
 }
 
 struct ChunkUnit {
@@ -88,8 +102,7 @@ struct ChunkUnit {
 }
 
 struct ChunkBalancer(VirtualIO) {
-    func Init(mainPath string, units []ChunkUnit)
-    func TrimEmpty() (int, error)
+    func Init(meta *ChunkMeta)
 }
 ```
 

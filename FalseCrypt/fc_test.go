@@ -151,14 +151,26 @@ func TestMain(m *testing.M) {
 	err = bf2.Import(temp)
 	fmt.Printf("BloomFilter2: %t %t %v\n", bf2.Test(cid1), bf2.Test(cid2), err)
 
-	// chunk balancer & virtual io
-	units := make([]ChunkUnit, 4)
-	units[0].Init("a", 1048576, 1.0)
-	units[1].Init("b", 1048576, 1.5)
-	units[2].Init("c", 1048576, 2.0)
-	units[3].Init("d", 1048576, 2.5)
+	// chunk balancer, virtual io
+	metaSource := &ChunkMeta{
+		MainPath: ".",
+		BfSize:   8000,
+		Paths:    []string{"a", "b", "c", "d"},
+		Caps:     []int64{1048576, 1048576, 1048576, 1048576},
+		Weights:  []float32{1.0, 1.5, 2.0, 2.5},
+		WriteKey: []byte("test_write_key"),
+	}
+	jsonStr, errSave := metaSource.Save()
+	meta := new(ChunkMeta)
+	errInit := meta.Init(jsonStr)
+	fmt.Printf("ChunkMeta: %t %v %v\n", errSave == nil && errInit == nil && meta.MainPath == ".", errSave, errInit)
+
 	cb := new(ChunkBalancer)
-	cb.Init(".", units)
+	cb.Init(meta)
+	checkChunkFile := func(cid []byte) bool {
+		_, err := cb.ReadChunk(cid)
+		return err == nil
+	}
 
 	// Account IO
 	accBuf := bytes.NewBuffer([]byte("account_data"))
@@ -174,15 +186,17 @@ func TestMain(m *testing.M) {
 		_ = cb.WriteChunk(cids[i], []byte(fmt.Sprintf("chunk_data_%d", i)))
 	}
 
-	// Check chunks
+	// Check chunks (Check export bloomfilter data)
+	bfData := cb.CheckChunk()
+	bfCheck := new(BloomFilter)
+	errBf := bfCheck.Import(bfData)
 	allExist := true
 	for i := 0; i < 32; i++ {
-		ok, _ := cb.CheckChunk(cids[i], true)
-		if !ok {
+		if !bfCheck.Test(cids[i]) {
 			allExist = false
 		}
 	}
-	fmt.Printf("Chunk CRC32 Check: %t\n", allExist)
+	fmt.Printf("Chunk BloomFilter Check: %t %v\n", allExist, errBf)
 
 	// Read chunks
 	readOk := true
@@ -198,7 +212,7 @@ func TestMain(m *testing.M) {
 	delOk := true
 	for i := 0; i < 8; i++ {
 		err := cb.DelChunk(cids[i])
-		ok, _ := cb.CheckChunk(cids[i], false)
+		ok := checkChunkFile(cids[i])
 		if err != nil || ok {
 			delOk = false
 		}
@@ -214,7 +228,7 @@ func TestMain(m *testing.M) {
 	trimmed, err := cb.TrimChunk(bf3.Export())
 	trimOk := true
 	for i := 8; i < 16; i++ {
-		ok, _ := cb.CheckChunk(cids[i], false)
+		ok := checkChunkFile(cids[i])
 		if ok {
 			trimOk = false
 		}
@@ -224,7 +238,7 @@ func TestMain(m *testing.M) {
 	fdel, err := cb.TrimEmpty()
 	fCount := 0
 	for i := 0; i < 32; i++ {
-		ok, _ := cb.CheckChunk(cids[i], false)
+		ok := checkChunkFile(cids[i])
 		if ok {
 			fCount++
 		}
