@@ -1,4 +1,4 @@
-# USAG-KOX v1.3.0
+# USAG-KOX v1.3.1
 
 Universal Security Assistant Gear - Ko Extension
 
