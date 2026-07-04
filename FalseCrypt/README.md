@@ -80,9 +80,10 @@ interface VirtualIO {
     func WriteChunk(cid []byte, data []byte) error
     func DelChunk(cid []byte) error
     
+    func GetLog() (string, error)
     func CheckChunk() []byte
-    func TrimChunk(bloom []byte) (int, error)
-    func TrimEmpty() (int, error)
+    func TrimChunk(bloom []byte) error
+    func TrimEmpty() error
 }
 
 struct ChunkMeta {

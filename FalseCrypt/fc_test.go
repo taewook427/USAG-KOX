@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/k-atusa/USAG-Lib/Bencrypt"
 )
@@ -225,7 +226,8 @@ func TestMain(m *testing.M) {
 	for i := 16; i < 32; i++ {
 		bf3.Add(cids[i])
 	}
-	trimmed, err := cb.TrimChunk(bf3.Export())
+	err = cb.TrimChunk(bf3.Export())
+	time.Sleep(1200 * time.Millisecond)
 	trimOk := true
 	for i := 8; i < 16; i++ {
 		ok := checkChunkFile(cids[i])
@@ -233,9 +235,11 @@ func TestMain(m *testing.M) {
 			trimOk = false
 		}
 	}
-	fmt.Printf("Chunk Trim: %t %d %v\n", trimOk, trimmed, err)
+	logRes, _ := cb.GetLog()
+	fmt.Printf("Chunk Trim: %t %v\nLog:\n%s\n", trimOk, err, logRes)
 
-	fdel, err := cb.TrimEmpty()
+	err = cb.TrimEmpty()
+	time.Sleep(1200 * time.Millisecond)
 	fCount := 0
 	for i := 0; i < 32; i++ {
 		ok := checkChunkFile(cids[i])
@@ -243,5 +247,6 @@ func TestMain(m *testing.M) {
 			fCount++
 		}
 	}
-	fmt.Printf("Fdel %d, Fcount %d, %v\n", fdel, fCount, err)
+	logRes, _ = cb.GetLog()
+	fmt.Printf("Fcount %d, %v\nLog:\n%s\n", fCount, err, logRes)
 }

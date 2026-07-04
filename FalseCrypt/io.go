@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -109,9 +110,10 @@ type VirtualIO interface {
 	WriteChunk(cid []byte, data []byte) error
 	DelChunk(cid []byte) error
 
+	GetLog() (string, error)
 	CheckChunk() []byte
-	TrimChunk(bloom []byte) (int, error)
-	TrimEmpty() (int, error)
+	TrimChunk(bloom []byte) error
+	TrimEmpty() error
 }
 
 // chunk IO metadata
@@ -141,7 +143,7 @@ type ChunkUnit struct {
 	Used   int64
 	Cap    int64
 	Weight float32
-	lock   sync.RWMutex
+	lock   sync.RWMutex // used size lock
 }
 
 func (cu *ChunkUnit) Init(path string, cap int64, weight float32) {
@@ -179,10 +181,7 @@ func (u *ChunkUnit) removeChunk(subDir string, fileName string) (bool, error) {
 
 	// decrement used
 	u.lock.Lock()
-	u.Used -= size
-	if u.Used < 0 {
-		u.Used = 0
-	}
+	u.Used = max(u.Used-size, 0)
 	u.lock.Unlock()
 	return true, nil // success
 }
@@ -217,10 +216,7 @@ func (u *ChunkUnit) trimUnit(bf *BloomFilter, logErr func(string, error)) int64 
 
 							// decrement used
 							u.lock.Lock()
-							u.Used -= size
-							if u.Used < 0 {
-								u.Used = 0
-							}
+							u.Used = max(u.Used-size, 0)
 							u.lock.Unlock()
 						} else {
 							logErr(fmt.Sprintf("TrimChunk %s", path), errDel)
@@ -278,13 +274,16 @@ func (u *ChunkUnit) trimEmpty() (int, error) {
 type ChunkBalancer struct {
 	MainPath string
 	Units    []ChunkUnit
-	lock     sync.RWMutex
-	bf       BloomFilter
+
+	mainLock   sync.RWMutex // main area lock
+	isTrimming atomic.Bool  // trimming state
+	bf         BloomFilter
 
 	logLock     sync.Mutex
 	logFile     *os.File
 	logLastTime time.Time
 	logClearEn  bool
+	logMem      []string
 }
 
 func (cb *ChunkBalancer) Init(meta *ChunkMeta) {
@@ -302,6 +301,7 @@ func (cb *ChunkBalancer) Init(meta *ChunkMeta) {
 		cb.Units[i].Init(meta.Paths[i], cp, wt)
 	}
 	os.MkdirAll(cb.MainPath, 0755)
+	cb.isTrimming.Store(false)
 
 	// get bloom filter capacity
 	fpRate := 0.001
@@ -335,6 +335,8 @@ func (cb *ChunkBalancer) Init(meta *ChunkMeta) {
 }
 
 func (cb *ChunkBalancer) GetAccount(username string, dst io.Writer) error {
+	cb.mainLock.RLock()
+	defer cb.mainLock.RUnlock()
 	srcPath := filepath.Join(cb.MainPath, hex.EncodeToString([]byte(username))+".webp")
 	file, err := os.Open(srcPath)
 	if err != nil {
@@ -350,6 +352,8 @@ func (cb *ChunkBalancer) GetAccount(username string, dst io.Writer) error {
 }
 
 func (cb *ChunkBalancer) SetAccount(username string, src io.Reader, size int64) error {
+	cb.mainLock.Lock()
+	defer cb.mainLock.Unlock()
 	dstPath := filepath.Join(cb.MainPath, hex.EncodeToString([]byte(username))+".webp")
 	file, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
@@ -365,6 +369,9 @@ func (cb *ChunkBalancer) SetAccount(username string, src io.Reader, size int64) 
 }
 
 func (cb *ChunkBalancer) ReadChunk(cid []byte) ([]byte, error) {
+	if cb.isTrimming.Load() {
+		return nil, errors.New("trimming in progress")
+	}
 	h := hex.EncodeToString(cid)
 	subDir := filepath.Join(h[0:2], h[2:4], h[4:6])
 	fileName := h[6:]
@@ -385,12 +392,14 @@ func (cb *ChunkBalancer) ReadChunk(cid []byte) ([]byte, error) {
 }
 
 func (cb *ChunkBalancer) WriteChunk(cid []byte, data []byte) error {
-	// remove existing chunk
-	cb.removeChunk(cid)
+	if cb.isTrimming.Load() {
+		return errors.New("trimming in progress")
+	}
 
+	// remove existing chunk, get size and name
+	cb.removeChunk(cid)
 	ord := cb.getUnitsOrd(cid)
 	size := int64(len(data))
-
 	h := hex.EncodeToString(cid)
 	subDir := filepath.Join(h[0:2], h[2:4], h[4:6])
 	newFileName := h[6:]
@@ -398,22 +407,24 @@ func (cb *ChunkBalancer) WriteChunk(cid []byte, data []byte) error {
 	// check capacity left by order
 	for _, idx := range ord {
 		cb.Units[idx].lock.Lock()
-		if cb.Units[idx].Used+size <= cb.Units[idx].Cap {
-			targetDir := filepath.Join(cb.Units[idx].Path, subDir)
-			os.MkdirAll(targetDir, 0755)
-
-			// write file, increment used
-			err := os.WriteFile(filepath.Join(targetDir, newFileName), data, 0644)
-			if err == nil {
-				cb.Units[idx].Used += size
-				cb.Units[idx].lock.Unlock()
-				cb.bf.Add(cid)
-				return nil
-			} else {
-				cb.logErr(fmt.Sprintf("WriteChunk %x", cid), err)
-			}
+		if cb.Units[idx].Used+size > cb.Units[idx].Cap {
+			cb.Units[idx].lock.Unlock()
+			continue
 		}
+		cb.Units[idx].Used += size
 		cb.Units[idx].lock.Unlock()
+
+		// write file
+		targetDir := filepath.Join(cb.Units[idx].Path, subDir)
+		os.MkdirAll(targetDir, 0755)
+		err := os.WriteFile(filepath.Join(targetDir, newFileName), data, 0644)
+		if err == nil {
+			cb.mainLock.Lock()
+			cb.bf.Add(cid)
+			cb.mainLock.Unlock()
+			return nil
+		}
+		cb.logErr(fmt.Sprintf("WriteChunk %x", cid), err)
 	}
 	err := errors.New("All storage units are full")
 	cb.logErr(fmt.Sprintf("WriteChunk %x", cid), err)
@@ -421,6 +432,9 @@ func (cb *ChunkBalancer) WriteChunk(cid []byte, data []byte) error {
 }
 
 func (cb *ChunkBalancer) DelChunk(cid []byte) error {
+	if cb.isTrimming.Load() {
+		return errors.New("trimming in progress")
+	}
 	err := cb.removeChunk(cid)
 	if err != nil {
 		cb.logErr(fmt.Sprintf("DelChunk %x", cid), err)
@@ -428,62 +442,91 @@ func (cb *ChunkBalancer) DelChunk(cid []byte) error {
 	return err
 }
 
+func (cb *ChunkBalancer) GetLog() (string, error) {
+	cb.logLock.Lock()
+	defer cb.logLock.Unlock()
+	res := strings.Join(cb.logMem, "\n")
+	cb.logMem = nil
+	return res, nil
+}
+
 func (cb *ChunkBalancer) CheckChunk() []byte {
+	cb.mainLock.RLock()
+	defer cb.mainLock.RUnlock()
 	return cb.bf.Export()
 }
 
-func (cb *ChunkBalancer) TrimChunk(bloom []byte) (int, error) {
+func (cb *ChunkBalancer) TrimChunk(bloom []byte) error {
+	if !cb.isTrimming.CompareAndSwap(false, true) {
+		return errors.New("trimming in progress")
+	}
+
 	// load bloom filter
 	bf := new(BloomFilter)
 	if err := bf.Import(bloom); err != nil {
 		cb.logErr("TrimChunk BloomFilter", err)
-		return 0, err
+		cb.isTrimming.Store(false)
+		return err
 	}
-	var wg sync.WaitGroup
-	var totalDeleted int64
 
-	// trim for each unit
-	for i := range cb.Units {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					cb.logErr("TrimChunk panic", fmt.Errorf("%v", r))
-				}
-			}()
-			localDeleted := cb.Units[idx].trimUnit(bf, cb.logErr)
-			atomic.AddInt64(&totalDeleted, localDeleted)
-		}(i)
-	}
-	wg.Wait()
-	return int(totalDeleted), nil
+	go func() {
+		defer func() {
+			cb.isTrimming.Store(false)
+		}()
+		var wg sync.WaitGroup
+		var totalDeleted int64
+
+		// trim for each unit
+		for i := range cb.Units {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						cb.logErr("TrimChunk panic", fmt.Errorf("%v", r))
+					}
+				}()
+				localDeleted := cb.Units[idx].trimUnit(bf, cb.logErr)
+				atomic.AddInt64(&totalDeleted, localDeleted)
+			}(i)
+		}
+		wg.Wait()
+		cb.logErr("TrimChunk Result", fmt.Errorf("Deleted %d chunks", totalDeleted))
+	}()
+	return nil
 }
 
-func (cb *ChunkBalancer) TrimEmpty() (int, error) {
-	var wg sync.WaitGroup
-	var total int64 = 0
-	var err error = nil
-
-	for i := range cb.Units {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					cb.logErr("TrimEmpty panic", fmt.Errorf("%v", r))
-				}
-			}()
-			count, terr := cb.Units[idx].trimEmpty()
-			atomic.AddInt64(&total, int64(count))
-			if terr != nil {
-				cb.logErr("TrimEmpty "+cb.Units[idx].Path, terr)
-				err = terr
-			}
-		}(i)
+func (cb *ChunkBalancer) TrimEmpty() error {
+	if !cb.isTrimming.CompareAndSwap(false, true) {
+		return errors.New("trimming in progress")
 	}
-	wg.Wait()
-	return int(total), err
+	go func() {
+		defer func() {
+			cb.isTrimming.Store(false)
+		}()
+		var wg sync.WaitGroup
+		var total int64 = 0
+
+		for i := range cb.Units {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				defer func() {
+					if r := recover(); r != nil {
+						cb.logErr("TrimEmpty panic", fmt.Errorf("%v", r))
+					}
+				}()
+				count, terr := cb.Units[idx].trimEmpty()
+				atomic.AddInt64(&total, int64(count))
+				if terr != nil {
+					cb.logErr("TrimEmpty "+cb.Units[idx].Path, terr)
+				}
+			}(i)
+		}
+		wg.Wait()
+		cb.logErr("TrimEmpty Result", fmt.Errorf("Deleted %d empty directories", total))
+	}()
+	return nil
 }
 
 func (cb *ChunkBalancer) logErr(op string, err error) {
@@ -505,7 +548,9 @@ func (cb *ChunkBalancer) logErr(op string, err error) {
 
 	// write log and start cleaner if not enabled
 	cb.logLastTime = time.Now()
-	fmt.Fprintf(cb.logFile, "[%s] [%s] %v\n", cb.logLastTime.Format("2006-01-02 15:04:05"), op, err)
+	logLine := fmt.Sprintf("[%s] [%s] %v", cb.logLastTime.Format("2006-01-02 15:04:05"), op, err)
+	fmt.Fprintln(cb.logFile, logLine)
+	cb.logMem = append(cb.logMem, logLine)
 	if !cb.logClearEn {
 		cb.logClearEn = true
 		go func() {
@@ -529,8 +574,6 @@ func (cb *ChunkBalancer) logErr(op string, err error) {
 }
 
 func (cb *ChunkBalancer) getUnitsOrd(cid []byte) []int {
-	cb.lock.RLock()
-	defer cb.lock.RUnlock()
 	n := len(cb.Units)
 	res := make([]int, n)
 	scores := make([]float64, n)
